@@ -20,7 +20,7 @@ MOVIE_CHANNEL = os.getenv("MOVIE_CHANNEL", "@Kino_luxTV")
 PROMO_CHANNEL = os.getenv("PROMO_CHANNEL", "@Promokodlar_bonus")
 TRAILER_CHANNEL = os.getenv("TRAILER_CHANNEL", "@kinoluxTreler")
 DATABASE_URL = os.getenv("DATABASE_URL")
-PORT = int(os.getenv("PORT", 443))  # Render uchun port
+PORT = int(os.getenv("PORT", 443))
 
 # ConversationHandler holatlari
 AWAITING_VIDEO, AWAITING_DETAILS = range(2)
@@ -50,7 +50,6 @@ def init_db():
             message_id TEXT NOT NULL
         );
     """)
-    # Agar last_code jadvalida hech qanday yozuv bo‘lmasa, boshlang‘ich qiymat qo‘shish
     cursor.execute("SELECT COUNT(*) FROM last_code")
     if cursor.fetchone()[0] == 0:
         cursor.execute("INSERT INTO last_code (code) VALUES (100)")
@@ -253,12 +252,21 @@ def handle_code_logic(update, context, code):
     if message_id:
         try:
             message_id = int(message_id)
-            logger.info(f"Attempting to forward message ID {message_id} from {MOVIE_CHANNEL}")
-            sent_message = context.bot.forward_message(
-                chat_id=user_id,
-                from_chat_id=MOVIE_CHANNEL,
-                message_id=message_id
-            )
+            logger.info(f"Attempting to send message content for code {code} from {MOVIE_CHANNEL}")
+            # Kanal xabarini olish
+            message = context.bot.get_message(MOVIE_CHANNEL, message_id)
+            # Xabar kontentini nusxalash va yuborish
+            if message.video:
+                caption = message.caption if message.caption else f"Kod: {code}"
+                context.bot.send_video(
+                    chat_id=user_id,
+                    video=message.video.file_id,
+                    caption=caption
+                )
+            else:
+                update.message.reply_text("Xabar formati qo‘llab-quvvatlanmaydi.")
+                return
+
             # Tugmalar qo‘shish
             keyboard = [
                 [InlineKeyboardButton("Barcha sifatli kinolar", url=f"https://t.me/{TRAILER_CHANNEL[1:]}")]
@@ -266,18 +274,21 @@ def handle_code_logic(update, context, code):
             context.bot.send_message(
                 chat_id=user_id,
                 text="Siz uchun yanada qiziq kinolar ⬇️",
-                reply_to_message_id=sent_message.message_id,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
             if "promo_sent" not in context.user_data:
                 promo_message_id = get_random_promo(context)
                 if promo_message_id:
                     update.message.reply_text("Tabriklaymiz, siz promo kod yutib oldingiz! 🎉")
-                    promo_message = context.bot.forward_message(
-                        chat_id=user_id,
-                        from_chat_id=PROMO_CHANNEL,
-                        message_id=promo_message_id
-                    )
+                    # Promo xabarini nusxalash
+                    promo_message = context.bot.get_message(PROMO_CHANNEL, promo_message_id)
+                    if promo_message.photo:
+                        caption = promo_message.caption if promo_message.caption else "Promo kod"
+                        context.bot.send_photo(
+                            chat_id=user_id,
+                            photo=promo_message.photo[-1].file_id,
+                            caption=caption
+                        )
                     # Promo kod tagida tugma
                     keyboard = [
                         [InlineKeyboardButton("Barcha promo kodlaringiz", url=f"https://t.me/{PROMO_CHANNEL[1:]}")]
@@ -285,18 +296,18 @@ def handle_code_logic(update, context, code):
                     context.bot.send_message(
                         chat_id=user_id,
                         text="Barcha promo kodlarni ko‘rish uchun:",
-                        reply_to_message_id=promo_message.message_id,
                         reply_markup=InlineKeyboardMarkup(keyboard)
                     )
                     context.user_data["promo_sent"] = True
                 else:
                     update.message.reply_text("Promo kod topilmadi, keyinroq urinib ko‘ring.")
-        except ValueError:
-            update.message.reply_text("Xato: Kodga mos xabar ID noto‘g‘ri formatda.")
-            logger.error(f"Invalid message ID format for code {code}: {message_id}")
         except Exception as e:
-            update.message.reply_text(f"Kechirasiz, xato yuz berdi: {e}")
-            logger.error(f"Error forwarding message for code {code}: {e}")
+            error_msg = str(e)
+            if "protected content" in error_msg.lower():
+                update.message.reply_text("Kechirasiz, bu kino himoyalangan va forward qilinmaydi.")
+            else:
+                update.message.reply_text(f"Kechirasiz, xato yuz berdi: {error_msg}")
+            logger.error(f"Error handling message for code {code}: {e}")
     else:
         keyboard = [
             [InlineKeyboardButton("Barcha kino kodlari ⬇️", url=f"https://t.me/{TRAILER_CHANNEL[1:]}")]
