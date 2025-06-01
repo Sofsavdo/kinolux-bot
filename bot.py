@@ -59,7 +59,7 @@ def init_db():
     conn.close()
     logger.info("Database initialized successfully")
 
-# Soxta HTTP server (Render uchun port ochish, agar webhook ishlamasa)
+# Soxta HTTP server (Render uchun port ochish)
 def start_dummy_server():
     Handler = http.server.SimpleHTTPRequestHandler
     with socketserver.TCPServer(("", PORT), Handler) as httpd:
@@ -399,8 +399,7 @@ def main():
     
     # Webhook rejimida ishga tushirishga urinish
     try:
-        # Webhook URL’ini aniq shaklda sozlash
-        webhook_url = f"https://kinolux-bot.onrender.com/webhook"
+        webhook_url = "https://kinolux-bot.onrender.com/webhook"
         updater.start_webhook(listen="0.0.0.0", port=PORT, url_path="webhook")
         updater.bot.set_webhook(webhook_url)
         logger.info(f"Webhook set successfully on port {PORT} with URL {webhook_url}")
