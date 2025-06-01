@@ -1,4 +1,7 @@
 import os
+import threading
+import http.server
+import socketserver
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler, ConversationHandler
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import random
@@ -21,6 +24,14 @@ CODE_FILE = "last_code.txt"
 
 # ConversationHandler holatlari
 AWAITING_VIDEO, AWAITING_DETAILS = range(2)
+
+# Soxta HTTP server (Render uchun port ochish)
+def start_dummy_server():
+    PORT = int(os.getenv("PORT", 80))  # Render PORT environment variable’ni ishlatadi
+    Handler = http.server.SimpleHTTPRequestHandler
+    with socketserver.TCPServer(("", PORT), Handler) as httpd:
+        logger.info(f"Dummy server started at port {PORT}")
+        httpd.serve_forever()
 
 # Oxirgi ishlatilgan kodni olish
 def get_last_code():
@@ -304,6 +315,9 @@ def promocodes(update, context):
 
 # Asosiy funksiya
 def main():
+    if not TOKEN:
+        logger.error("TOKEN environment variable not set")
+        raise ValueError("TOKEN environment variable not set")
     updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
     # ConversationHandler for add_movie
@@ -324,4 +338,6 @@ def main():
     updater.idle()
 
 if __name__ == "__main__":
+    # Soxta HTTP serverni alohida thread’da ishga tushirish
+    threading.Thread(target=start_dummy_server, daemon=True).start()
     main()
