@@ -2,6 +2,7 @@ import os
 import threading
 import http.server
 import socketserver
+import psycopg2
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler, ConversationHandler
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import random
@@ -18,16 +19,46 @@ CHANNELS = ["@Uzum_market_yandex"]
 MOVIE_CHANNEL = os.getenv("MOVIE_CHANNEL", "@Kino_luxTV")
 PROMO_CHANNEL = os.getenv("PROMO_CHANNEL", "@Promokodlar_bonus")
 TRAILER_CHANNEL = os.getenv("TRAILER_CHANNEL", "@kinoluxTreler")
-
-# Kino kodi generatsiyasi uchun fayl
-CODE_FILE = "last_code.txt"
+DATABASE_URL = os.getenv("DATABASE_URL")  # PostgreSQL ulanish URL
 
 # ConversationHandler holatlari
 AWAITING_VIDEO, AWAITING_DETAILS = range(2)
 
+# PostgreSQL bilan ulanish
+def get_db_connection():
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        return conn
+    except Exception as e:
+        logger.error(f"Error connecting to database: {e}")
+        raise
+
+# Jadval yaratish (agar mavjud bo‘lmasa)
+def init_db():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS last_code (
+            id SERIAL PRIMARY KEY,
+            code INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS message_ids (
+            id SERIAL PRIMARY KEY,
+            code TEXT NOT NULL,
+            message_id TEXT NOT NULL
+        );
+    """)
+    # Agar last_code jadvalida hech qanday yozuv bo‘lmasa, boshlang‘ich qiymat qo‘shish
+    cursor.execute("SELECT COUNT(*) FROM last_code")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("INSERT INTO last_code (code) VALUES (100)")
+    conn.commit()
+    cursor.close()
+    conn.close()
+
 # Soxta HTTP server (Render uchun port ochish)
 def start_dummy_server():
-    PORT = int(os.getenv("PORT", 80))  # Render PORT environment variable’ni ishlatadi
+    PORT = int(os.getenv("PORT", 80))
     Handler = http.server.SimpleHTTPRequestHandler
     with socketserver.TCPServer(("", PORT), Handler) as httpd:
         logger.info(f"Dummy server started at port {PORT}")
@@ -35,64 +66,69 @@ def start_dummy_server():
 
 # Oxirgi ishlatilgan kodni olish
 def get_last_code():
+    conn = get_db_connection()
+    cursor = conn.cursor()
     try:
-        with open(CODE_FILE, "r") as f:
-            last_code = int(f.read().strip())
+        cursor.execute("SELECT code FROM last_code ORDER BY id DESC LIMIT 1")
+        last_code = cursor.fetchone()[0]
         logger.info(f"Last code read: {last_code}")
         return last_code
-    except FileNotFoundError:
-        logger.warning(f"{CODE_FILE} not found, starting with 100")
-        return 100
     except Exception as e:
-        logger.error(f"Error reading {CODE_FILE}: {e}")
+        logger.error(f"Error reading last code: {e}")
         return 100
+    finally:
+        cursor.close()
+        conn.close()
 
 # Yangi kod generatsiya qilish
 def generate_code():
     last_code = get_last_code()
     new_code = last_code + 1
+    conn = get_db_connection()
+    cursor = conn.cursor()
     try:
-        with open(CODE_FILE, "w") as f:
-            f.write(str(new_code))
+        cursor.execute("INSERT INTO last_code (code) VALUES (%s)", (new_code,))
+        conn.commit()
         logger.info(f"New code generated: {new_code}")
         return str(new_code)
     except Exception as e:
-        logger.error(f"Error writing to {CODE_FILE}: {e}")
+        logger.error(f"Error writing new code: {e}")
         return str(new_code)
+    finally:
+        cursor.close()
+        conn.close()
 
 # Xabar ID larini saqlash
 def save_message_id(code, message_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
     try:
-        with open("message_ids.txt", "a", encoding="utf-8") as f:
-            f.write(f"{code}:{message_id}\n")
+        cursor.execute("INSERT INTO message_ids (code, message_id) VALUES (%s, %s)", (code, message_id))
+        conn.commit()
         logger.info(f"Saved message ID for code {code}: {message_id}")
     except Exception as e:
         logger.error(f"Error saving message ID for code {code}: {e}")
+    finally:
+        cursor.close()
+        conn.close()
 
 def get_message_id(code):
+    conn = get_db_connection()
+    cursor = conn.cursor()
     try:
-        with open("message_ids.txt", "r", encoding="utf-8") as f:
-            lines = f.readlines()
-            logger.info(f"Reading message_ids.txt: {lines}")
-            for line in lines:
-                line = line.strip()
-                if line:
-                    try:
-                        c, m_id = line.split(":")
-                        if c == code:
-                            logger.info(f"Found message ID for code {code}: {m_id}")
-                            return m_id
-                    except ValueError:
-                        logger.warning(f"Invalid line format in message_ids.txt: {line}")
-                        continue
+        cursor.execute("SELECT message_id FROM message_ids WHERE code = %s", (code,))
+        result = cursor.fetchone()
+        if result:
+            logger.info(f"Found message ID for code {code}: {result[0]}")
+            return result[0]
         logger.warning(f"No message ID found for code {code}")
         return None
-    except FileNotFoundError:
-        logger.warning("message_ids.txt not found")
-        return None
     except Exception as e:
-        logger.error(f"Error reading message_ids.txt: {e}")
+        logger.error(f"Error reading message ID: {e}")
         return None
+    finally:
+        cursor.close()
+        conn.close()
 
 # Obuna tekshiruvi
 def get_subscription_keyboard():
@@ -318,6 +354,11 @@ def main():
     if not TOKEN:
         logger.error("TOKEN environment variable not set")
         raise ValueError("TOKEN environment variable not set")
+    if not DATABASE_URL:
+        logger.error("DATABASE_URL environment variable not set")
+        raise ValueError("DATABASE_URL environment variable not set")
+    # Database’ni ishga tushirish
+    init_db()
     updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
     # ConversationHandler for add_movie
