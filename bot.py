@@ -20,8 +20,7 @@ MOVIE_CHANNEL = os.getenv("MOVIE_CHANNEL", "@Kino_luxTV")
 PROMO_CHANNEL = os.getenv("PROMO_CHANNEL", "@Promokodlar_bonus")
 TRAILER_CHANNEL = os.getenv("TRAILER_CHANNEL", "@kinoluxTreler")
 DATABASE_URL = os.getenv("DATABASE_URL")
-# Telegram API faqat 80, 88, 443 yoki 8443 portlarini qo‘llab-quvvatlaydi
-PORT = int(os.getenv("PORT", 443))  # Render’da 443 sifatida sozlanadi
+PORT = int(os.getenv("PORT", 443))  # Telegram API 443 portni qo‘llab-quvvatlaydi
 
 # ConversationHandler holatlari
 AWAITING_VIDEO, AWAITING_DETAILS = range(2)
@@ -398,17 +397,22 @@ def main():
     dp.add_handler(MessageHandler(Filters.all, webhook))
     dp.add_handler(CallbackQueryHandler(webhook))
     
-    # Webhook rejimida ishga tushirish
+    # Webhook rejimida ishga tushirishga urinish
     try:
+        # Webhook URL’ini aniq shaklda sozlash
+        webhook_url = f"https://kinolux-bot.onrender.com/webhook"
         updater.start_webhook(listen="0.0.0.0", port=PORT, url_path="webhook")
-        webhook_url = f"https://kinolux-bot.onrender.com:{PORT}/webhook" if PORT != 443 else f"https://kinolux-bot.onrender.com/webhook"
         updater.bot.set_webhook(webhook_url)
-        logger.info(f"Webhook set successfully on port {PORT}")
+        logger.info(f"Webhook set successfully on port {PORT} with URL {webhook_url}")
         updater.idle()
     except Exception as e:
         logger.error(f"Error setting webhook: {e}")
-        # Webhook ishlamasa, soxta serverni ishga tushirish
-        start_dummy_server()
+        # Webhook ishlamasa, polling rejimiga o‘tish
+        logger.info("Falling back to polling mode due to webhook failure")
+        updater.start_polling()
+        updater.idle()
 
 if __name__ == "__main__":
+    # Soxta HTTP serverni alohida thread’da ishga tushirish (Render uchun port ochish)
+    threading.Thread(target=start_dummy_server, daemon=True).start()
     main()
