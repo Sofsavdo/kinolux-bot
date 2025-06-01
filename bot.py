@@ -20,7 +20,8 @@ MOVIE_CHANNEL = os.getenv("MOVIE_CHANNEL", "@Kino_luxTV")
 PROMO_CHANNEL = os.getenv("PROMO_CHANNEL", "@Promokodlar_bonus")
 TRAILER_CHANNEL = os.getenv("TRAILER_CHANNEL", "@kinoluxTreler")
 DATABASE_URL = os.getenv("DATABASE_URL")
-PORT = int(os.getenv("PORT", 80))
+# Telegram API faqat 80, 88, 443 yoki 8443 portlarini qo‘llab-quvvatlaydi
+PORT = int(os.getenv("PORT", 443))  # Render’da 443 sifatida sozlanadi
 
 # ConversationHandler holatlari
 AWAITING_VIDEO, AWAITING_DETAILS = range(2)
@@ -400,8 +401,9 @@ def main():
     # Webhook rejimida ishga tushirish
     try:
         updater.start_webhook(listen="0.0.0.0", port=PORT, url_path="webhook")
-        updater.bot.set_webhook(f"https://kinolux-bot.onrender.com/webhook")
-        logger.info("Webhook set successfully")
+        webhook_url = f"https://kinolux-bot.onrender.com:{PORT}/webhook" if PORT != 443 else f"https://kinolux-bot.onrender.com/webhook"
+        updater.bot.set_webhook(webhook_url)
+        logger.info(f"Webhook set successfully on port {PORT}")
         updater.idle()
     except Exception as e:
         logger.error(f"Error setting webhook: {e}")
