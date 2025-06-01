@@ -1,7 +1,4 @@
 import os
-import threading
-import http.server
-import socketserver
 import psycopg2
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler, ConversationHandler
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -19,7 +16,7 @@ CHANNELS = ["@Uzum_market_yandex"]
 MOVIE_CHANNEL = os.getenv("MOVIE_CHANNEL", "@Kino_luxTV")
 PROMO_CHANNEL = os.getenv("PROMO_CHANNEL", "@Promokodlar_bonus")
 TRAILER_CHANNEL = os.getenv("TRAILER_CHANNEL", "@kinoluxTreler")
-DATABASE_URL = os.getenv("DATABASE_URL")  # PostgreSQL ulanish URL
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 # ConversationHandler holatlari
 AWAITING_VIDEO, AWAITING_DETAILS = range(2)
@@ -55,14 +52,6 @@ def init_db():
     conn.commit()
     cursor.close()
     conn.close()
-
-# Soxta HTTP server (Render uchun port ochish)
-def start_dummy_server():
-    PORT = int(os.getenv("PORT", 80))
-    Handler = http.server.SimpleHTTPRequestHandler
-    with socketserver.TCPServer(("", PORT), Handler) as httpd:
-        logger.info(f"Dummy server started at port {PORT}")
-        httpd.serve_forever()
 
 # Oxirgi ishlatilgan kodni olish
 def get_last_code():
@@ -349,6 +338,18 @@ def promocodes(update, context):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+# Webhook uchun handler
+def webhook(update, context):
+    if update.message:
+        if update.message.text == "/start":
+            start(update, context)
+        elif update.message.text == "/promocodes":
+            promocodes(update, context)
+        else:
+            handle_code(update, context)
+    elif update.callback_query:
+        check_subscription_button(update, context)
+
 # Asosiy funksiya
 def main():
     if not TOKEN:
@@ -371,14 +372,12 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)]
     )
     dp.add_handler(conv_handler)
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("promocodes", promocodes))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_code))
-    dp.add_handler(CallbackQueryHandler(check_subscription_button, pattern="check_subscription"))
-    updater.start_polling()
+    dp.add_handler(MessageHandler(Filters.all, webhook))
+    dp.add_handler(CallbackQueryHandler(webhook))
+    # Webhook rejimida ishga tushirish
+    updater.start_webhook(listen="0.0.0.0", port=80, url_path="webhook")
+    updater.bot.set_webhook(f"https://kinolux-bot.onrender.com/webhook")
     updater.idle()
 
 if __name__ == "__main__":
-    # Soxta HTTP serverni alohida thread’da ishga tushirish
-    threading.Thread(target=start_dummy_server, daemon=True).start()
     main()
