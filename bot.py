@@ -17,6 +17,7 @@ MOVIE_CHANNEL = os.getenv("MOVIE_CHANNEL", "@Kino_luxTV")
 PROMO_CHANNEL = os.getenv("PROMO_CHANNEL", "@Promokodlar_bonus")
 TRAILER_CHANNEL = os.getenv("TRAILER_CHANNEL", "@kinoluxTreler")
 DATABASE_URL = os.getenv("DATABASE_URL")
+PORT = int(os.getenv("PORT", 80))
 
 # ConversationHandler holatlari
 AWAITING_VIDEO, AWAITING_DETAILS = range(2)
@@ -292,7 +293,7 @@ def handle_code_logic(update, context, code):
             "Kechirasiz, kod noto‘g‘ri 😔",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
-        logger.warning(f"Code {code} not found in message_ids.txt")
+        logger.warning(f"Code {code} not found in message_ids")
 
 def handle_code(update, context):
     user_id = update.message.from_user.id
@@ -375,7 +376,7 @@ def main():
     dp.add_handler(MessageHandler(Filters.all, webhook))
     dp.add_handler(CallbackQueryHandler(webhook))
     # Webhook rejimida ishga tushirish
-    updater.start_webhook(listen="0.0.0.0", port=80, url_path="webhook")
+    updater.start_webhook(listen="0.0.0.0", port=PORT, url_path="webhook")
     updater.bot.set_webhook(f"https://kinolux-bot.onrender.com/webhook")
     updater.idle()
 
