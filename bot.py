@@ -1,3 +1,4 @@
+import os
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler, ConversationHandler
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import random
@@ -9,11 +10,11 @@ logger = logging.getLogger(__name__)
 
 # Sozlamalar
 TOKEN = os.getenv("TOKEN")
-ADMIN_ID = 6878669336
+ADMIN_ID = int(os.getenv("ADMIN_ID", 6878669336))
 CHANNELS = ["@Uzum_market_yandex"]
-MOVIE_CHANNEL = "@Kino_luxTV"
-PROMO_CHANNEL = "@Promokodlar_bonus"
-TRAILER_CHANNEL = "@kinoluxTreler"
+MOVIE_CHANNEL = os.getenv("MOVIE_CHANNEL", "@Kino_luxTV")
+PROMO_CHANNEL = os.getenv("PROMO_CHANNEL", "@Promokodlar_bonus")
+TRAILER_CHANNEL = os.getenv("TRAILER_CHANNEL", "@kinoluxTreler")
 
 # Kino kodi generatsiyasi uchun fayl
 CODE_FILE = "last_code.txt"
@@ -26,17 +27,27 @@ def get_last_code():
     try:
         with open(CODE_FILE, "r") as f:
             last_code = int(f.read().strip())
-    except:
-        last_code = 100  # Boshlang‘ich kod
-    return last_code
+        logger.info(f"Last code read: {last_code}")
+        return last_code
+    except FileNotFoundError:
+        logger.warning(f"{CODE_FILE} not found, starting with 100")
+        return 100
+    except Exception as e:
+        logger.error(f"Error reading {CODE_FILE}: {e}")
+        return 100
 
 # Yangi kod generatsiya qilish
 def generate_code():
     last_code = get_last_code()
     new_code = last_code + 1
-    with open(CODE_FILE, "w") as f:
-        f.write(str(new_code))
-    return str(new_code)
+    try:
+        with open(CODE_FILE, "w") as f:
+            f.write(str(new_code))
+        logger.info(f"New code generated: {new_code}")
+        return str(new_code)
+    except Exception as e:
+        logger.error(f"Error writing to {CODE_FILE}: {e}")
+        return str(new_code)
 
 # Xabar ID larini saqlash
 def save_message_id(code, message_id):
@@ -64,6 +75,9 @@ def get_message_id(code):
                         logger.warning(f"Invalid line format in message_ids.txt: {line}")
                         continue
         logger.warning(f"No message ID found for code {code}")
+        return None
+    except FileNotFoundError:
+        logger.warning("message_ids.txt not found")
         return None
     except Exception as e:
         logger.error(f"Error reading message_ids.txt: {e}")
