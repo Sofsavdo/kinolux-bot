@@ -4,6 +4,9 @@ from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, Callb
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import random
 import logging
+import http.server
+import socketserver
+import threading
 
 # Logging sozlamalari
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -26,6 +29,7 @@ AWAITING_VIDEO, AWAITING_DETAILS = range(2)
 def get_db_connection():
     try:
         conn = psycopg2.connect(DATABASE_URL)
+        logger.info("Successfully connected to PostgreSQL")
         return conn
     except Exception as e:
         logger.error(f"Error connecting to database: {e}")
@@ -53,6 +57,14 @@ def init_db():
     conn.commit()
     cursor.close()
     conn.close()
+    logger.info("Database initialized successfully")
+
+# Soxta HTTP server (Render uchun port ochish, agar webhook ishlamasa)
+def start_dummy_server():
+    Handler = http.server.SimpleHTTPRequestHandler
+    with socketserver.TCPServer(("", PORT), Handler) as httpd:
+        logger.info(f"Dummy server started at port {PORT}")
+        httpd.serve_forever()
 
 # Oxirgi ishlatilgan kodni olish
 def get_last_code():
@@ -341,15 +353,18 @@ def promocodes(update, context):
 
 # Webhook uchun handler
 def webhook(update, context):
-    if update.message:
-        if update.message.text == "/start":
-            start(update, context)
-        elif update.message.text == "/promocodes":
-            promocodes(update, context)
-        else:
-            handle_code(update, context)
-    elif update.callback_query:
-        check_subscription_button(update, context)
+    try:
+        if update.message:
+            if update.message.text == "/start":
+                start(update, context)
+            elif update.message.text == "/promocodes":
+                promocodes(update, context)
+            else:
+                handle_code(update, context)
+        elif update.callback_query:
+            check_subscription_button(update, context)
+    except Exception as e:
+        logger.error(f"Error in webhook handler: {e}")
 
 # Asosiy funksiya
 def main():
@@ -359,8 +374,14 @@ def main():
     if not DATABASE_URL:
         logger.error("DATABASE_URL environment variable not set")
         raise ValueError("DATABASE_URL environment variable not set")
+    
     # Database’ni ishga tushirish
-    init_db()
+    try:
+        init_db()
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
+        raise
+
     updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
     # ConversationHandler for add_movie
@@ -375,10 +396,17 @@ def main():
     dp.add_handler(conv_handler)
     dp.add_handler(MessageHandler(Filters.all, webhook))
     dp.add_handler(CallbackQueryHandler(webhook))
+    
     # Webhook rejimida ishga tushirish
-    updater.start_webhook(listen="0.0.0.0", port=PORT, url_path="webhook")
-    updater.bot.set_webhook(f"https://kinolux-bot.onrender.com/webhook")
-    updater.idle()
+    try:
+        updater.start_webhook(listen="0.0.0.0", port=PORT, url_path="webhook")
+        updater.bot.set_webhook(f"https://kinolux-bot.onrender.com/webhook")
+        logger.info("Webhook set successfully")
+        updater.idle()
+    except Exception as e:
+        logger.error(f"Error setting webhook: {e}")
+        # Webhook ishlamasa, soxta serverni ishga tushirish
+        start_dummy_server()
 
 if __name__ == "__main__":
     main()
